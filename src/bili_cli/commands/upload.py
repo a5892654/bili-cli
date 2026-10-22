@@ -34,6 +34,8 @@ PREUPLOAD_URL = "https://member.bilibili.com/preupload"
 ZONES_URL = "https://member.bilibili.com/x/vupre/web/archive/human/type2/list"
 # bilibili-api calls this with `t=`, which the server ignores; the parameter is `tag`.
 TAG_CHECK_URL = "https://member.bilibili.com/x/vupre/web/topic/tag/check"
+TOPICS_URL = "https://member.bilibili.com/x/vupre/web/topic/type"
+TOPIC_SEARCH_URL = "https://member.bilibili.com/x/vupre/web/topic/search"
 ARCHIVE_VIEW_URL = "https://member.bilibili.com/x/vupre/web/archive/view"
 EDIT_URL = "https://member.bilibili.com/x/vu/web/edit"
 # Chapter endpoints, as used by B 站's player/editor bundle (scene=chapter).
@@ -105,6 +107,98 @@ async def _check_tags(cred: Credential, tags: list[str]) -> list[str]:
         if res.get("code") != 0:
             bad.append(t)
     return bad
+
+
+async def _activity_topics(cred: Credential, keyword: str | None, tid: int | None, page: int, size: int, offset: int) -> dict[str, Any]:
+    """Use the uploader's topics, whose mission IDs can be passed to submit."""
+    if keyword is not None:
+        url = TOPIC_SEARCH_URL
+        params = {"keywords": keyword, "page_size": size, "offset": offset}
+    else:
+        url = TOPICS_URL
+        params = {"pn": page - 1, "ps": size}
+        if tid is not None:
+            params["type_id"] = tid
+    async with web_client(cred, referer="https://member.bilibili.com/platform/upload/video/frame") as client:
+        resp = await client.get(url, params=params)
+        resp.raise_for_status()
+        body = resp.json()
+    if body.get("code") != 0:
+        from bilibili_api.exceptions import ResponseCodeException
+
+        raise ResponseCodeException(body.get("code"), body.get("message"), body)
+    return body.get("data") or {}
+
+
+def _activity_card(topic: dict[str, Any]) -> dict[str, Any]:
+    topic_id = topic.get("topic_id") or topic.get("id")
+    mission_id = topic.get("mission_id") or 0
+    card = {
+        "topic_id": topic_id,
+        "mission_id": mission_id,
+        "name": topic.get("topic_name") or topic.get("name"),
+        "description": topic.get("description") or None,
+        "activity_text": topic.get("activity_text") or None,
+        "activity_description": topic.get("activity_description") or None,
+        "activity_sign": topic.get("activity_sign") or None,
+        "act_protocol": topic.get("act_protocol") or None,
+    }
+    flags = []
+    if topic_id:
+        flags.append(f"--topic-id {topic_id}")
+    if mission_id:
+        flags.append(f"--mission-id {mission_id}")
+    card["use_with"] = " ".join(flags)
+    return card
+
+
+def _topic_fields(topic_id: int | None, mission_id: int | None) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    if topic_id is not None:
+        fields["topic_id"] = topic_id
+        fields["topic_detail"] = {"from_topic_id": topic_id, "from_source": "arc.web.recommend"}
+    if mission_id is not None:
+        fields["mission_id"] = mission_id
+    return fields
+
+
+@app.command()
+def activities(
+    keyword: Optional[str] = typer.Option(None, "--keyword", "-k", help="按关键词搜索投稿活动；不传则查看推荐活动。"),
+    tid: Optional[int] = typer.Option(None, "--tid", min=1, help="推荐活动的旧版分区 ID；不与 --keyword 同用。"),
+    page: int = typer.Option(1, "--page", min=1, help="推荐活动页码，从 1 开始；关键词搜索用 --offset。"),
+    size: int = typer.Option(20, "--size", min=1, max=50, help="每页获取的话题数，过滤后活动数可能更少。"),
+    offset: int = typer.Option(0, "--offset", min=0, help="关键词搜索偏移量；下一页用返回的 next_offset。"),
+    all_topics: bool = typer.Option(False, "--all-topics", help="同时返回没有活动关联的普通话题。"),
+) -> None:
+    """查询投稿活动，返回可供 upload video / edit 使用的 topic_id、mission_id。"""
+
+    async def body():
+        query = keyword.strip() if keyword is not None else None
+        if query == "":
+            raise BiliError("invalid_argument", "活动搜索关键词不能为空。")
+        if query is not None and (tid is not None or page != 1):
+            raise BiliError("invalid_argument", "关键词搜索不能同时指定 --tid 或 --page；翻页请用 --offset。")
+        if query is None and offset != 0:
+            raise BiliError("invalid_argument", "--offset 只用于关键词搜索；推荐活动翻页请用 --page。")
+        data = await _activity_topics(config.require_credential(), query, tid, page, size, offset)
+        if output.settings.raw:
+            return data
+        result = data.get("result") or data
+        topics = result.get("topics") or []
+        page_info = result.get("page_info") or {}
+        return {
+            "keyword": query,
+            "tid": tid,
+            "page": page if query is None else None,
+            "offset": offset if query is not None else None,
+            "has_more": page_info.get("has_more"),
+            "next_offset": page_info.get("offset") if query is not None and page_info.get("has_more") else None,
+            "items": [_activity_card(t) for t in topics if all_topics or t.get("mission_id")],
+            "tips": result.get("tips") or None,
+        }
+
+    run(body)
 
 
 async def _preflight(cred: Credential, video: Path) -> None:
@@ -197,6 +291,8 @@ def video_(
         None, "--zone", help="新版分区 ID（见 `bili upload zones`）；不传则按标题自动预测，预测不一定准。"
     ),
     tid: Optional[int] = typer.Option(None, "--tid", help="旧版分区 ID；不传则按标题自动预测。"),
+    topic_id: Optional[int] = typer.Option(None, "--topic-id", min=1, help="投稿话题 ID，见 `bili upload activities`。"),
+    mission_id: Optional[int] = typer.Option(None, "--mission-id", min=1, help="投稿活动 ID，与查询结果里的话题 ID 配套使用。"),
     repost: Optional[str] = typer.Option(None, "--repost", help="转载稿件的来源链接；不传即为自制。"),
     ai_declare: bool = typer.Option(
         True, "--ai-declare/--no-ai-declare", help="勾选创作声明“含AI生成内容”。默认开启，关闭需显式传 --no-ai-declare。"
@@ -289,6 +385,7 @@ def video_(
             meta["source"] = repost
         if dtime:
             meta["dtime"] = dtime
+        meta.update(_topic_fields(topic_id, mission_id))
 
         summary = {
             "files": [str(f) for f in files],
@@ -302,6 +399,8 @@ def video_(
             "cover": str(cover) if cover else "auto (ffmpeg)",
             "cover43": str(cover43) if cover43 else None,
         }
+        if topic_id is not None or mission_id is not None:
+            summary.update(topic_id=topic_id, mission_id=mission_id)
         if output.settings.dry_run:
             return {"dry_run": True, "action": "upload.video", "params": summary, "meta": meta}
 
@@ -394,6 +493,10 @@ def status(bvid: str = typer.Argument(..., help="稿件 BV 号。")) -> None:
             "creation_statement": statement.get("content"),
             "tags": [t for t in (arc.get("tag") or "").split(",") if t],
             "zone": {"tid": arc.get("tid"), "zone": human.get("id"), "zone_name": human.get("name")},
+            "topic_id": arc.get("topic_id"),
+            "topic_name": arc.get("topic_name"),
+            "mission_id": arc.get("mission_id"),
+            "mission_name": arc.get("mission_name"),
             "publish_time": iso_time(arc.get("ptime")),
             "scheduled_time": iso_time(arc.get("dtime")),
             "pages": [
@@ -508,6 +611,11 @@ def build_edit(view: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
         body["human_type2"] = arc["human_type2"]["id"]
     if arc.get("dtime") and arc.get("state") != 0:  # keep a pending schedule
         body["dtime"] = arc["dtime"]
+    # Editing replaces the archive; omitting these can detach an existing activity.
+    for key in ("topic_id", "mission_id", "topic_detail"):
+        if key in arc:
+            body[key] = arc[key]
+    body.update(_topic_fields(changes.get("topic_id"), changes.get("mission_id")))
     if "tags" in changes:
         body["tag"] = ",".join(changes["tags"])
     if "ai_declare" in changes:
@@ -531,8 +639,10 @@ def edit(
     cover: Optional[Path] = typer.Option(None, "--cover", help="新封面图片。"),
     cover43: Optional[Path] = typer.Option(None, "--cover43", help="新的 4:3 封面（手机端推荐流）。"),
     ai_declare: Optional[bool] = typer.Option(None, "--ai-declare/--no-ai-declare", help="修改“含AI生成内容”声明；不传则保持不变。"),
+    topic_id: Optional[int] = typer.Option(None, "--topic-id", min=1, help="新话题 ID；不传则保留原话题。"),
+    mission_id: Optional[int] = typer.Option(None, "--mission-id", min=1, help="新投稿活动 ID；请与 --topic-id 配套使用，不传则保留。"),
 ) -> None:
-    """修改已投稿件的标题、简介、标签、封面或 AI 声明；没指定的设置保持不变。改完稿件会重新审核。"""
+    """修改已投稿件的标题、简介、标签、封面、AI 声明或投稿活动；没指定的设置保持不变。改完稿件会重新审核。"""
 
     async def body():
         cred = config.require_credential()
@@ -555,8 +665,12 @@ def edit(
                 raise BiliError("invalid_argument", f"封面文件不存在：{path}")
         if ai_declare is not None:
             changes["ai_declare"] = ai_declare
+        if topic_id is not None:
+            changes["topic_id"] = topic_id
+        if mission_id is not None:
+            changes["mission_id"] = mission_id
         if not changes and cover is None and cover43 is None and not desc_at:
-            raise BiliError("invalid_argument", "没有要修改的内容。", hint="传 --title / --desc / --desc-at / --tag / --cover / --cover43 / --ai-declare 中的至少一个。")
+            raise BiliError("invalid_argument", "没有要修改的内容。", hint="传 --title / --desc / --desc-at / --tag / --cover / --cover43 / --ai-declare / --topic-id / --mission-id 中的至少一个。")
         desc_mentions = await _desc_mentions(desc_at)
         view = await _archive_view(cred, bvid)
         if reason := edit_blocker(view):
@@ -569,7 +683,8 @@ def edit(
             if len(changes["desc"]) > DESC_MAX:
                 raise BiliError("invalid_argument", f"加上 @ 后简介超过 {DESC_MAX} 字。")
         before = {"title": arc.get("title"), "desc": arc.get("desc"), "tags": [t for t in (arc.get("tag") or "").split(",") if t],
-                  "ai_declare": (arc.get("creation_statement") or {}).get("id") == STATEMENT_AI}
+                  "ai_declare": (arc.get("creation_statement") or {}).get("id") == STATEMENT_AI,
+                  "topic_id": arc.get("topic_id"), "mission_id": arc.get("mission_id")}
         diff = {k: {"from": before[k], "to": v} for k, v in changes.items() if k != "desc_v2" and before.get(k) != v}
         if desc_mentions:
             diff["desc_at"] = {"to": desc_mentions}

@@ -42,6 +42,7 @@ bili auth status          # 已登录 → 继续；not_logged_in → 走下面�
 | 私信 | `bili dm list --unread`、`bili dm read <UID>`、`bili dm send <UID|owner> "内容"` |
 | 发动态（图文、@ 人） | `bili dynamic post "内容" --image a.png --at 昵称` |
 | 投稿 | `bili upload video a.mp4 --title … --tag …`（默认带“含AI生成内容”声明） |
+| 查找并参加投稿活动 | `bili upload activities -k 创作`；把同一结果的 `--topic-id` 和 `--mission-id` 用于 `upload video / edit`（先 `--dry-run`） |
 | 改已投稿件的标题 / 简介 / 标签 / 封面 | `bili upload edit <BV> --title …`（会重新审核，先给用户看 `--dry-run`） |
 | 简介里 @ 人（投稿或改稿） | `--desc "角色设计 @冬冰 " --desc-at 冬冰` |
 | 看自己的数据 | `bili me stats`（账号：播放、涨粉、播放端、超过多少同类 UP）、`bili upload stats <BV>`（单稿：互动率、完播率） |

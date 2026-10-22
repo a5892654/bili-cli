@@ -69,9 +69,12 @@ Requires Python 3.10+. ffmpeg is optional (HD frames, transcription, uploads wit
 | **Engage**: one inbox for replies / mentions / likes / DMs, each reply with a ready-to-run `reply_with` command; real @mentions by UID or nickname; post comments with images and view the images in others' comments; emote lookup; list only the comments you haven't answered; pin a comment under your own video | `bili feed inbox`, `bili comment post <BV> "…" --at owner` |
 | **Private messages** with an anti-harassment allowlist | `bili dm send owner "…"` |
 | **Create**: text and image dynamics with @mentions, uploads (AI-content declaration on by default, separate 4:3 cover), scheduling, review status, editing a published video, real @mentions in the description | `bili upload video a.mp4 --title …`, `bili upload edit <BV> --title …` |
+| **Submission activities**: recommended activities by legacy zone, keyword search, activity/topic binding on upload and edit, saved activity IDs in review status | `bili upload activities -k "creative"`, `bili upload video a.mp4 --title … --tag … --topic-id 123 --mission-id 456 --dry-run` |
 | **Creator tools**: progress-bar chapters, interactive votes / ratings / follow buttons, creator analytics (completion rate, traffic split, how you rank against similar uploaders), any uploader's profile and videos | `bili upload chapters set`, `bili upload stats <BV>`, `bili me stats`, `bili user videos <UID>` |
 | **Speech-to-text**: one-command local Qwen3-ASR (GPU auto-detected; a 31-min video in ~2 min on an RTX 3060) or cloud engines | `bili asr setup local` |
 | **Agent integration**: install the skill into all local agents | `bili skills install --yes` |
+
+Use `bili upload activities --tid 231` for recommendations or `bili upload activities -k "creative"` to search. Pass the matching `topic_id` and `mission_id` from one result to `upload video` or `upload edit`; `use_with` contains ready-to-use flags. The IDs above are placeholders. Search uses `--offset` with the returned `next_offset`; recommendations use `--page`. Keyword search cannot be combined with `--tid` or `--page`. `--all-topics` includes ordinary topics; `--size` counts topics before filtering, so an empty activity page may still have more results. Add any tags required by the activity with `--tag`, read its rules/protocol, and check `upload status` after submission. Bilibili determines eligibility. Editing other fields preserves existing activity/topic IDs.
 
 ## MCP
 

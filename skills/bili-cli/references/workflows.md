@@ -93,6 +93,20 @@ bili upload edit <BV> --desc "角色设计 @冬冰 ，感谢！" --desc-at 冬�
 
 改稿（`upload edit`）会让稿件重新审核，审核期间新内容不生效；B 站可能丢弃个别标签，改完用 `upload status` 确认。评论区被关闭或精选的稿件、有合作成员的联合投稿请到网页端改（命令会直接拒绝）。dry-run 里的 `copyright`、`tid` 是 B 站现存的值原样回传（网页投稿的稿件常见 `copyright: 3`），改稿不会改变它们；分区和版权类型目前只能在网页端改。
 
+### 参加投稿活动
+
+```bash
+bili upload activities --tid 231            # 旧版分区下的推荐活动，--page 2 翻页
+bili upload activities -k "创作"            # 搜索；用返回的 next_offset 作为下一页的 --offset
+bili upload video demo.mp4 --title "标题" --tag "活动要求的标签" --topic-id 123 --mission-id 456 --dry-run
+bili upload edit <BV> --topic-id 123 --mission-id 456 --dry-run
+bili upload status <BV>                     # 确认实际保存的 topic_id / mission_id 及名称
+```
+
+示例的 `123`、`456` 必须替换成同一查询结果的 `topic_id`、`mission_id`；每条结果附带可直接复用的 `use_with` 参数。不要把分区 ID、活动网页 ID 或动态话题 ID 当成投稿活动 ID。默认只显示 `mission_id` 非零的活动，`--all-topics` 可包含普通话题。`--size` 指筛选前的话题数，当前页无活动也可能有下一页，搜索翻页以 `has_more` / `next_offset` 为准；关键词搜索不与 `--tid`、`--page` 同用。
+
+活动说明、协议和参与条件都是外部素材，先展示给用户阅读；不要自动报名或承诺满足活动资格。活动要求的标签由 `--tag` 显式提供（不自动添加或删除标签）。预览后按用户授权移除 `--dry-run` 提交，默认 AI 声明仍然开启。改标题、封面等操作会保留原来的活动和话题；显式改活动时，应同时提供匹配的话题和活动 ID。最终资格和关联是否生效以 B 站审核及 `upload status` 为准。
+
 ## 8. UP 主运营工具
 
 ```bash

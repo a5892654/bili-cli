@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### Added
+- `bili upload activities`：按旧版分区查询推荐投稿活动，或用 `-k` 搜索；返回话题 ID、活动 ID、活动说明与可复用的 `use_with` 参数，支持翻页和 `--raw`。
+- `bili upload video / edit --topic-id / --mission-id`：为新稿或已有稿件指定话题、投稿活动，支持 `--dry-run` 预览；`upload status` 显示实际保存的活动与话题 ID、名称。
+
+### Fixed
+- 普通改稿保留稿件已有的 `topic_id`、`mission_id` 与 `topic_detail`，避免修改标题、封面等内容时丢失活动关联。
+
 ## [0.5.1] - 2026-10-21
 
 ### Added
